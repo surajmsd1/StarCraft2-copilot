@@ -151,6 +151,10 @@ class App(tk.Tk):
         ttk.Button(bottom, text="Test voice", command=self._test_voice).pack(side="left", padx=6)
         self.status = ttk.Label(bottom, text="SC2: looking...", anchor="e")
         self.status.pack(side="right")
+        self.me_label = ttk.Label(bottom, text="", cursor="hand2", foreground="#0066cc")
+        self.me_label.pack(side="right", padx=10)
+        self.me_label.bind("<Button-1>", self._edit_me)
+        self._refresh_me()
 
     # ---------- event pump ----------
 
@@ -243,6 +247,27 @@ class App(tk.Tk):
             subprocess.Popen(["open", str(BUILDS_DIR)])
         else:
             subprocess.Popen(["xdg-open", str(BUILDS_DIR)])
+
+    def _refresh_me(self) -> None:
+        name = load_settings().get("player_name", "")
+        self.me_label.config(text=f"Me: {name or 'click to set'}")
+
+    def _edit_me(self, _event=None) -> None:
+        from tkinter import simpledialog
+
+        current = load_settings().get("player_name", "")
+        name = simpledialog.askstring(
+            "Your name",
+            "Your StarCraft II name, exactly as it appears in replays.\n"
+            "Reviews analyze this player's side of each game:",
+            initialvalue=current,
+            parent=self,
+        )
+        if name is not None:
+            settings = load_settings()
+            settings["player_name"] = name.strip()
+            save_settings(settings)
+            self._refresh_me()
 
     # ---------- import ----------
 
@@ -342,8 +367,7 @@ class App(tk.Tk):
         dialog.grab_set()
         ttk.Label(
             dialog,
-            text=f"{replay.name}\n\nPick YOUR name to practice your own build.\n"
-                 "(Picking the opponent copies their build instead - also useful!)",
+            text=f"{replay.name}\n\nWhose build order should become the practice build?",
             padding=8,
         ).pack()
         listbox = tk.Listbox(dialog, width=40, height=max(2, len(players)))
@@ -356,19 +380,26 @@ class App(tk.Tk):
         listbox.selection_set(preselect)
         listbox.pack(padx=8)
 
-        def confirm():
+        def confirm(remember_me: bool):
             selection = listbox.curselection()
             if not selection:
                 return
             player = players[selection[0]]
             dialog.destroy()
-            settings = load_settings()
-            settings["player_name"] = player["name"]
-            save_settings(settings)
+            if remember_me:
+                settings = load_settings()
+                settings["player_name"] = player["name"]
+                save_settings(settings)
+                self._refresh_me()
             self._finish_import(replay, player["name"])
 
-        ttk.Button(dialog, text="Import build", command=confirm).pack(pady=8)
-        listbox.bind("<Double-Button-1>", lambda e: confirm())
+        # Two explicit paths so importing an opponent/pro never overwrites
+        # who "me" is (reviews analyze "me").
+        ttk.Button(dialog, text="This is me - import my build",
+                   command=lambda: confirm(True)).pack(pady=(8, 2))
+        ttk.Button(dialog, text="Import someone else's build (opponent / pro)",
+                   command=lambda: confirm(False)).pack(pady=(0, 8))
+        listbox.bind("<Double-Button-1>", lambda e: confirm(False))
 
     def _finish_import(self, replay: Path, player_name: str) -> None:
         def worker():
@@ -491,22 +522,42 @@ class App(tk.Tk):
         def worker():
             try:
                 from ..analyze.compare import compare, render_report
-                from ..replay.extract import extract_build
+                from ..replay.extract import extract_build, list_players
                 planned = Build.load(path)
-                me = load_settings().get("player_name") or None
-                try:
-                    actual = extract_build(str(replay), player=me, include_workers=True)
-                except Exception:
-                    if me is None:
-                        raise
-                    # Different account/name in this replay - fall back to player 1.
-                    actual = extract_build(str(replay), include_workers=True)
+                players = list_players(str(replay))
+                target, how = self._resolve_review_player(players, planned)
+                if target is None:
+                    self._post("log", "Review failed: no players found in replay.")
+                    return
+                self._post("log", f"Analyzing {target['name']} ({target['race']}) - {how}.")
+                actual = extract_build(str(replay), player=target["name"], include_workers=True)
                 self._post("log", render_report(compare(planned, actual)))
             except Exception as exc:
                 self._post("log", f"Review failed: {exc}")
 
         threading.Thread(target=worker, daemon=True).start()
         self.last_reviewed = replay
+
+    @staticmethod
+    def _resolve_review_player(players: list, planned) -> tuple:
+        """Pick whose side of the replay to review: the configured 'me' by
+        name, else the (unique) player matching the planned build's race,
+        else player 1 - and say which rule applied so a wrong pick is
+        visible instead of silently producing an all-MISS report."""
+        if not players:
+            return None, ""
+        me = load_settings().get("player_name", "").lower()
+        if me:
+            for p in players:
+                if me in str(p["name"]).lower():
+                    return p, "your configured name"
+        race = (getattr(planned, "race", "") or "").lower()
+        if race:
+            same_race = [p for p in players if str(p["race"]).lower() == race]
+            if len(same_race) == 1:
+                suffix = " ('Me' is not set - click Me: below to set it)" if not me else ""
+                return same_race[0], f"only {planned.race} player in this game{suffix}"
+        return players[0], "first player in replay (set 'Me:' below for accurate reviews)"
 
     # ---------- background loops ----------
 

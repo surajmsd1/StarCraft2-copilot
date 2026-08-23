@@ -21,6 +21,8 @@ if not exist .venv\installed.ok (
     echo ok> .venv\installed.ok
 )
 
+.venv\Scripts\python.exe update.py
+
 start "" .venv\Scripts\pythonw.exe -m sc2copilot.gui.app
 exit /b 0
 

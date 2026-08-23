@@ -62,3 +62,17 @@ def test_time_accepts_clock_strings_in_json(tmp_path):
     path.write_text(json.dumps({"name": "b", "steps": [{"time": "2:35", "action": "Reaper"}]}))
     build = Build.load(path)
     assert build.steps[0].time == 155.0
+
+
+def test_merge_batches_collapses_same_action_close_in_time():
+    from sc2copilot.replay.extract import merge_batches
+
+    steps = [
+        BuildStep(time=134, action="Roach"),
+        BuildStep(time=134, action="Roach"),
+        BuildStep(time=135, action="Roach"),
+        BuildStep(time=146, action="Roach"),   # > 3s after previous: own step
+        BuildStep(time=156, action="Queen"),
+    ]
+    merged = merge_batches(steps)
+    assert [(s.action, s.count) for s in merged] == [("Roach", 3), ("Roach", 1), ("Queen", 1)]

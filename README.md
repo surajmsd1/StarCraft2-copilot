@@ -15,6 +15,8 @@ A StarCraft 2 build creator, practice coach, and post-game analyzer — driven b
 2. Download this repo (green **Code** button → **Download ZIP**) and unzip it anywhere.
 3. Double-click **`SC2Copilot.bat`**. First run installs everything (~1 min), then the app opens.
 
+The launcher **updates itself from GitHub on every start** — download once, always current. (Offline? It just runs the version you have.)
+
 In the app:
 
 - **Import newest replay** → pick your name → your last game's opener becomes a build.

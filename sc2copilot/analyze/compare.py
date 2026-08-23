@@ -13,12 +13,25 @@ reference lines unless a matching benchmark exists.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 
 from ..models import Benchmark, Build, BuildStep, format_time
 
 MATCH_WINDOW = 90.0  # seconds a real step may drift from plan and still match
+WORKER_ACTIONS = {"Drone", "SCV", "Probe"}
+
+
+def _expand(steps: List[BuildStep]) -> List[BuildStep]:
+    """Undo batch-merging for matching: a 'Roach x3' step becomes three
+    individual steps so counts on either side pair up one-to-one."""
+    out: List[BuildStep] = []
+    for step in steps:
+        if step.count <= 1:
+            out.append(step)
+        else:
+            out.extend(replace(step, count=1) for _ in range(step.count))
+    return out
 
 
 @dataclass
@@ -62,9 +75,9 @@ class Comparison:
 def compare(planned: Build, actual: Build) -> Comparison:
     """Match planned steps to the actual (replay-extracted) build in order."""
     comparison = Comparison(build_name=planned.name, benchmarks=list(actual.benchmarks))
-    remaining = actual.sorted_steps()
+    remaining = _expand(actual.sorted_steps())
 
-    for step in planned.sorted_steps():
+    for step in _expand(planned.sorted_steps()):
         result = StepResult(planned=step)
         if step.kind == "build":
             idx = _find_match(step, remaining)
@@ -115,13 +128,17 @@ def render_report(comparison: Comparison) -> str:
                 f" ({sign}{abs(delta):.0f}s)"
             )
 
-    if comparison.extra_actions:
+    extras = [s for s in comparison.extra_actions if s.action not in WORKER_ACTIONS]
+    hidden_workers = len(comparison.extra_actions) - len(extras)
+    if extras:
         lines.append("")
         lines.append("Not in the plan (improvised):")
-        for step in comparison.extra_actions[:15]:
+        for step in extras[:15]:
             lines.append(f"       {format_time(step.time)}  {step.action}")
-        if len(comparison.extra_actions) > 15:
-            lines.append(f"       ... and {len(comparison.extra_actions) - 15} more")
+        if len(extras) > 15:
+            lines.append(f"       ... and {len(extras) - 15} more")
+        if hidden_workers:
+            lines.append(f"       ({hidden_workers} worker-production steps hidden)")
 
     if comparison.benchmarks:
         lines.append("")

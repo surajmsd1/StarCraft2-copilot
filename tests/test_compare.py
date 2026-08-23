@@ -68,3 +68,28 @@ def test_render_report_smoke():
     assert "First blood" in report
     assert "2:35" in report
     assert "Marine" in report
+
+
+def test_batched_counts_expand_for_matching():
+    plan = Build(name="p", steps=[BuildStep(time=134, action="Roach", count=3)])
+    act = Build(
+        name="a",
+        steps=[BuildStep(time=140, action="Roach"), BuildStep(time=141, action="Roach")],
+    )
+    comparison = compare(plan, act)
+    assert comparison.comparable_count == 3
+    assert comparison.matched_count == 2  # third roach never built
+
+
+def test_report_hides_worker_spam():
+    plan = Build(name="p", steps=[BuildStep(time=17, action="SupplyDepot")])
+    act = Build(
+        name="a",
+        steps=[BuildStep(time=18, action="SupplyDepot")]
+        + [BuildStep(time=t, action="Drone") for t in range(1, 40, 3)]
+        + [BuildStep(time=100, action="Hatchery")],
+    )
+    report = render_report(compare(plan, act))
+    assert "Drone" not in report
+    assert "Hatchery" in report
+    assert "worker-production steps hidden" in report

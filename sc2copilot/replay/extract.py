@@ -102,6 +102,25 @@ def _pick_player(parsed: dict, player: Optional[str]) -> tuple:
     return pid, players[pid]
 
 
+def merge_batches(steps: List[BuildStep], window: float = 3.0) -> List[BuildStep]:
+    """Collapse identical actions made within `window` seconds into one step
+    with a count (three Roaches at 2:14 become 'Roach x3'), so the coach says
+    '3 Roach' once instead of announcing each egg."""
+    merged: List[BuildStep] = []
+    for step in steps:
+        prev = merged[-1] if merged else None
+        if (
+            prev is not None
+            and step.action == prev.action
+            and step.kind == prev.kind
+            and step.time - prev.time <= window
+        ):
+            prev.count += step.count
+        else:
+            merged.append(step)
+    return merged
+
+
 def extract_build(
     replay_path: str,
     player: Optional[str] = None,
@@ -141,6 +160,8 @@ def extract_build(
                 warn=warn,
             )
         )
+
+    steps = merge_batches(steps)
 
     build = Build(
         name=f"{pdata.get('race', '?')} build from {Path(replay_path).stem}",

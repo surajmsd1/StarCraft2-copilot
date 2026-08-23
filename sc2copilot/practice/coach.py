@@ -117,13 +117,15 @@ def run_coach(
         waiting_said = False
         for event in scheduler.advance(now):
             step = event.step
+            label = step.spoken_cue if step.count <= 1 else f"{step.count}x {step.spoken_cue}"
+            say = step.spoken_cue if step.count <= 1 else f"{step.count} {step.spoken_cue}"
             if event.warning:
-                text = f"{step.spoken_cue} coming up (at {format_time(step.time)})"
-                spoken = f"{step.spoken_cue} coming up"
+                text = f"{label} coming up (at {format_time(step.time)})"
+                spoken = f"{say} coming up"
             else:
                 early = step.time - now > 1.5
-                text = f"{step.spoken_cue} at {format_time(step.time)}" if early else step.spoken_cue
-                spoken = f"{step.spoken_cue}, {speak_time(step.time)}" if early else step.spoken_cue
+                text = f"{label} at {format_time(step.time)}" if early else label
+                spoken = f"{say}, {speak_time(step.time)}" if early else say
             announcer.announce(now, text, spoken=spoken)
         sleep(poll_interval)
     announcer.announce(clock() or 0, "Build complete. Good luck out there.")
