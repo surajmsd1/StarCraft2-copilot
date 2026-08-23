@@ -354,7 +354,11 @@ class App(tk.Tk):
             self._log("StarCraft II is not running yet - open it and start a match.")
         self._log("Nothing happens until a match begins; then each step is called out"
                   " a few seconds early, following the in-game clock.")
-        self.announcer = Announcer(use_tts=self.speak.get(), sink=lambda line: self._post("log", line))
+        self.announcer = Announcer(
+            use_tts=self.speak.get(),
+            sink=lambda line: self._post("log", line),
+            voice=load_settings().get("voice", ""),
+        )
         if self.speak.get():
             self._log(f"Voice: {self.announcer.describe_voice()}.")
             if not self.announcer.tts_available:
@@ -376,13 +380,28 @@ class App(tk.Tk):
         self.coach_thread.start()
 
     def _test_voice(self) -> None:
-        if not hasattr(self, "_voice_tester"):
-            self._voice_tester = Announcer(use_tts=True, sink=lambda line: self._post("log", line))
-        self._log(f"Voice: {self._voice_tester.describe_voice()}. You should hear a test sentence now.")
-        if self._voice_tester.tts_available:
-            self._voice_tester.test_voice()
-        else:
+        chosen = load_settings().get("voice", "")
+        if getattr(self, "_voice_tester_choice", None) != chosen:
+            self._voice_tester = Announcer(
+                use_tts=True, sink=lambda line: self._post("log", line), voice=chosen
+            )
+            self._voice_tester_choice = chosen
+        tester = self._voice_tester
+        self._log(f"Voice: {tester.describe_voice()}"
+                  + (f" ('{chosen}')" if chosen else "")
+                  + ". You should hear a test sentence now.")
+        if not tester.tts_available:
             self._log("No speech engine found on this system - cues will be text-only.")
+            return
+        tester.test_voice()
+
+        def worker():
+            voices = tester.list_voices()
+            if voices:
+                self._post("log", "Installed voices: " + ", ".join(voices))
+                self._post("log", f'To switch, put e.g. "voice": "{voices[-1]}" into {SETTINGS_FILE}')
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---------- review ----------
 

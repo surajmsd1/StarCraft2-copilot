@@ -20,12 +20,32 @@ from __future__ import annotations
 
 import importlib.util
 import queue
+import re
 import shutil
 import subprocess
 import sys
 import threading
 
 from ..models import format_time
+
+
+def humanize(text: str) -> str:
+    """Make replay-derived names speakable: 'SpawningPool' -> 'Spawning Pool'.
+
+    Splits lowercase-to-uppercase boundaries only, so acronyms like SCV
+    survive intact."""
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text).replace("_", " ")
+
+
+def speak_time(seconds: float) -> str:
+    """Say a game time the way a person would: '48 seconds', '1 35', '2 minutes'."""
+    seconds = int(round(seconds))
+    if seconds < 60:
+        return f"{seconds} seconds"
+    minutes, secs = divmod(seconds, 60)
+    if secs == 0:
+        return f"{minutes} {'minute' if minutes == 1 else 'minutes'}"
+    return f"{minutes} {secs:02d}"
 
 
 def _detect_backend() -> str:
@@ -39,11 +59,13 @@ def _detect_backend() -> str:
 
 
 class Announcer:
-    def __init__(self, use_tts: bool = True, sink=None):
+    def __init__(self, use_tts: bool = True, sink=None, voice: str = ""):
         """sink: callable(str) that receives each cue line; default prints.
-        A GUI passes its own sink to show cues in-window."""
+        A GUI passes its own sink to show cues in-window.
+        voice: name (or substring) of an installed system voice to use."""
         self._sink = sink or (lambda line: print(line, flush=True))
         self._queue: "queue.Queue[str]" = queue.Queue()
+        self.voice = voice or ""
         self.backend = _detect_backend() if use_tts else "off"
         if self.backend not in ("none", "off"):
             threading.Thread(target=self._speech_loop, daemon=True).start()
@@ -61,13 +83,34 @@ class Announcer:
             "off": "off",
         }[self.backend]
 
-    def announce(self, game_time: float, text: str) -> None:
+    def announce(self, game_time: float, text: str, spoken: str = "") -> None:
+        """Show `text` in the sink; say `spoken` (or a humanized `text`) aloud.
+        Pass spoken="-" to display without speaking (status lines, filenames)."""
         self._sink(f"[{format_time(game_time)}] {text}")
-        if self.tts_available:
-            self._queue.put(text)
+        if self.tts_available and spoken != "-":
+            self._queue.put(humanize(spoken or text))
 
     def test_voice(self) -> None:
         self._queue.put("Voice check. Supply depot at 17 seconds.")
+
+    def list_voices(self) -> list:
+        """Names of installed system voices (Windows only for now)."""
+        if self.backend != "windows":
+            return []
+        try:
+            out = subprocess.run(
+                [
+                    "powershell", "-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Speech; "
+                    "(New-Object System.Speech.Synthesis.SpeechSynthesizer)"
+                    ".GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }",
+                ],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                capture_output=True, text=True, timeout=20,
+            )
+            return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+        except Exception:
+            return []
 
     # ---------- speech worker ----------
 
@@ -83,6 +126,14 @@ class Announcer:
     def _make_speaker(self):
         if self.backend == "windows":
             no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            select = ""
+            if self.voice:
+                safe_voice = self.voice.replace("'", "''")
+                select = (
+                    "$m = $v.GetInstalledVoices() | Where-Object "
+                    f"{{ $_.VoiceInfo.Name -like '*{safe_voice}*' }} | Select-Object -First 1; "
+                    "if ($m) { $v.SelectVoice($m.VoiceInfo.Name) }; "
+                )
 
             def speak(text: str) -> None:
                 safe = text.replace("'", "''")
@@ -91,7 +142,7 @@ class Announcer:
                         "powershell", "-NoProfile", "-Command",
                         "Add-Type -AssemblyName System.Speech; "
                         "$v = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                        f"$v.Rate = 1; $v.Speak('{safe}')",
+                        f"{select}$v.Speak('{safe}')",
                     ],
                     creationflags=no_window,
                     timeout=30,
@@ -100,7 +151,8 @@ class Announcer:
             return speak
 
         if self.backend == "macos":
-            return lambda text: subprocess.run(["say", text], timeout=30)
+            args = ["say"] + (["-v", self.voice] if self.voice else [])
+            return lambda text: subprocess.run(args + [text], timeout=30)
 
         # pyttsx3: engine must be created on this thread (its SAPI/espeak
         # drivers are single-apartment and go silent if used cross-thread).

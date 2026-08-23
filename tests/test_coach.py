@@ -51,7 +51,7 @@ class RecordingAnnouncer:
     def __init__(self):
         self.messages = []
 
-    def announce(self, game_time, text):
+    def announce(self, game_time, text, spoken=""):
         self.messages.append((game_time, text))
 
 

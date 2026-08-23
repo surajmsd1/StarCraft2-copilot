@@ -18,6 +18,7 @@ import time as _time
 from typing import Callable, List, Optional
 
 from ..models import Build, BuildStep, format_time
+from .announce import speak_time
 from .game_client import SC2ClientAPI
 
 
@@ -71,7 +72,8 @@ def run_coach(
     surface them; cues themselves go through the announcer.
     """
     scheduler = CueScheduler(build)
-    announcer.announce(0, f"Practicing: {build.name} ({len(build.steps)} cues)")
+    # Status lines are informational; only actual cues deserve the voice.
+    announcer.announce(0, f"Practicing: {build.name} ({len(build.steps)} cues)", spoken="-")
     waited = 0.0
     waiting_said = False
     while not scheduler.done:
@@ -90,9 +92,10 @@ def run_coach(
             continue
         waiting_said = False
         for step in scheduler.advance(now):
-            target = format_time(step.time)
-            suffix = f" at {target}" if step.time - now > 1.5 else ""
-            announcer.announce(now, f"{step.spoken_cue}{suffix}")
+            early = step.time - now > 1.5
+            text = f"{step.spoken_cue} at {format_time(step.time)}" if early else step.spoken_cue
+            spoken = f"{step.spoken_cue}, {speak_time(step.time)}" if early else step.spoken_cue
+            announcer.announce(now, text, spoken=spoken)
         sleep(poll_interval)
     announcer.announce(clock() or 0, "Build complete. Good luck out there.")
 
