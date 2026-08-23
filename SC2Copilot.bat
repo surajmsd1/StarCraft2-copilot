@@ -11,10 +11,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist .venv (
+if not exist .venv\installed.ok (
     echo First-time setup, this takes a minute...
-    py -3 -m venv .venv || goto :fail
-    .venv\Scripts\pip install -e .[tts] || goto :fail
+    if not exist .venv (
+        py -3 -m venv .venv || goto :fail
+    )
+    .venv\Scripts\python.exe -m pip install --upgrade pip || goto :fail
+    .venv\Scripts\python.exe -m pip install .[tts] || goto :fail
+    echo ok> .venv\installed.ok
 )
 
 start "" .venv\Scripts\pythonw.exe -m sc2copilot.gui.app
