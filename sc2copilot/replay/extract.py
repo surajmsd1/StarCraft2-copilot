@@ -22,6 +22,47 @@ class ExtractionError(RuntimeError):
     pass
 
 
+# Cue timing on import: a structure needs money banked and a worker walked to
+# the spot, so its cue comes earlier than a unit's. The first of each tech
+# structure additionally gets a spoken heads-up (warn) well in advance -
+# that's the "commitment" moment of a build.
+LEAD_STRUCTURE = 8.0
+LEAD_SUPPLY = 6.0
+LEAD_UNIT = 4.0
+WARN_FIRST_TECH = 15.0
+
+SUPPLY_NAMES = {"SupplyDepot", "Pylon", "Overlord"}
+STRUCTURE_NAMES = {
+    # Terran
+    "CommandCenter", "OrbitalCommand", "PlanetaryFortress", "Refinery",
+    "Barracks", "EngineeringBay", "Bunker", "SensorTower", "MissileTurret",
+    "Factory", "GhostAcademy", "Starport", "Armory", "FusionCore",
+    "TechLab", "Reactor", "BarracksTechLab", "BarracksReactor",
+    "FactoryTechLab", "FactoryReactor", "StarportTechLab", "StarportReactor",
+    # Zerg
+    "Hatchery", "Lair", "Hive", "SpawningPool", "Extractor",
+    "EvolutionChamber", "RoachWarren", "BanelingNest", "SpineCrawler",
+    "SporeCrawler", "HydraliskDen", "LurkerDen", "Spire", "GreaterSpire",
+    "NydusNetwork", "InfestationPit", "UltraliskCavern",
+    # Protoss
+    "Nexus", "Assimilator", "Gateway", "WarpGate", "Forge",
+    "CyberneticsCore", "PhotonCannon", "ShieldBattery", "RoboticsFacility",
+    "Stargate", "TwilightCouncil", "RoboticsBay", "FleetBeacon",
+    "TemplarArchives", "DarkShrine",
+}
+
+
+def _cue_timing(name: str, seen_structures: set) -> tuple:
+    """(lead, warn) for an imported step."""
+    if name in SUPPLY_NAMES:
+        return LEAD_SUPPLY, 0.0
+    if name in STRUCTURE_NAMES:
+        first = name not in seen_structures
+        seen_structures.add(name)
+        return LEAD_STRUCTURE, WARN_FIRST_TECH if first else 0.0
+    return LEAD_UNIT, 0.0
+
+
 def _load_spawningtool(replay_path: str) -> dict:
     try:
         import spawningtool.parser
@@ -78,6 +119,7 @@ def extract_build(
     pid, pdata = _pick_player(parsed, player)
 
     steps: List[BuildStep] = []
+    seen_structures: set = set()
     for entry in pdata.get("buildOrder", []):
         if entry.get("is_chronoboosted") is True and not entry.get("name"):
             continue
@@ -87,12 +129,16 @@ def extract_build(
         if until is not None and seconds > until:
             break
         supply = entry.get("supply")
+        name = str(entry.get("name", "?"))
+        lead, warn = _cue_timing(name, seen_structures)
         steps.append(
             BuildStep(
                 time=seconds,
-                action=str(entry.get("name", "?")),
+                action=name,
                 supply=int(supply) if supply is not None else None,
                 kind="build",
+                lead=lead,
+                warn=warn,
             )
         )
 

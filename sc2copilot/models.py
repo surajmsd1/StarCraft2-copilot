@@ -57,6 +57,7 @@ class BuildStep:
     kind: str = "build"
     cue: Optional[str] = None
     lead: float = 5.0  # announce this many seconds before `time`
+    warn: float = 0.0  # if > lead: also give a heads-up this early ("X coming up")
 
     @property
     def spoken_cue(self) -> str:
@@ -68,6 +69,8 @@ class BuildStep:
             del d["supply"]
         if d["cue"] is None:
             del d["cue"]
+        if not d["warn"]:
+            del d["warn"]
         return d
 
     @classmethod
@@ -80,6 +83,7 @@ class BuildStep:
             kind=d.get("kind", "build"),
             cue=d.get("cue"),
             lead=float(d.get("lead", 5.0)),
+            warn=float(d.get("warn", 0.0)),
         )
 
 

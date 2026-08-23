@@ -109,6 +109,7 @@ class App(tk.Tk):
         self.build_list.bind("<<ListboxSelect>>", lambda e: self._show_selected_build())
 
         ttk.Button(left, text="Import newest replay", command=self._import_newest).pack(fill="x", pady=(8, 2))
+        ttk.Button(left, text="Browse all replays...", command=self._browse_replays).pack(fill="x", pady=2)
         ttk.Button(left, text="Import replay file...", command=self._import_browse).pack(fill="x", pady=2)
         ttk.Button(left, text="Open builds folder", command=self._open_builds_folder).pack(fill="x", pady=2)
 
@@ -252,6 +253,66 @@ class App(tk.Tk):
             return
         self._start_import(replay)
 
+    def _browse_replays(self) -> None:
+        """All replays across the detected folders, newest first, with
+        one-click import or review - no digging through Explorer."""
+        replays = sorted(
+            (p for d in self.replay_dirs for p in d.glob("*.SC2Replay")),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not replays:
+            messagebox.showinfo(
+                "No replays found",
+                "No replay folder detected. Use 'Import replay file...' to browse manually.",
+            )
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Replays ({len(replays)})")
+        dialog.transient(self)
+        dialog.geometry("640x420")
+
+        tree = ttk.Treeview(dialog, columns=("played",), show="tree headings")
+        tree.heading("#0", text="Map / game")
+        tree.heading("played", text="Played")
+        tree.column("#0", width=420)
+        tree.column("played", width=160)
+        from datetime import datetime
+
+        for i, path in enumerate(replays):
+            played = datetime.fromtimestamp(path.stat().st_mtime).strftime("%a %b %d, %H:%M")
+            tree.insert("", "end", iid=str(i), text=path.stem, values=(played,))
+        tree.selection_set("0")
+        scroll = ttk.Scrollbar(dialog, command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side="top", fill="both", expand=True, padx=8, pady=8)
+        scroll.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+        def chosen():
+            selection = tree.selection()
+            return replays[int(selection[0])] if selection else None
+
+        buttons = ttk.Frame(dialog)
+        buttons.pack(side="bottom", fill="x", padx=8, pady=(0, 8))
+
+        def do_import():
+            replay = chosen()
+            if replay:
+                dialog.destroy()
+                self._start_import(replay)
+
+        def do_review():
+            replay = chosen()
+            if replay:
+                dialog.destroy()
+                self._review(replay)
+
+        ttk.Button(buttons, text="Import as build", command=do_import).pack(side="left")
+        ttk.Button(buttons, text="Review vs selected build", command=do_review).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Close", command=dialog.destroy).pack(side="right")
+        tree.bind("<Double-Button-1>", lambda e: do_import())
+
     def _import_browse(self) -> None:
         initial = str(self.replay_dirs[0]) if self.replay_dirs else str(Path.home())
         path = filedialog.askopenfilename(
@@ -364,12 +425,20 @@ class App(tk.Tk):
             if not self.announcer.tts_available:
                 self._log("Cues will be text-only in this window.")
 
+        try:
+            extra_lead = float(load_settings().get("extra_lead", 0) or 0)
+        except (TypeError, ValueError):
+            extra_lead = 0.0
+        if extra_lead:
+            self._log(f"All cues shifted {extra_lead:.0f}s earlier (extra_lead in settings.json).")
+
         def worker():
             try:
                 run_coach(
                     build, self.announcer, live_clock(),
                     should_stop=self.coach_stop.is_set,
                     status=lambda line: self._post("log", line),
+                    extra_lead=extra_lead,
                 )
             except Exception as exc:
                 self._post("log", f"Coach error: {exc}")

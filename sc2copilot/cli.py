@@ -68,7 +68,7 @@ def cmd_practice(args) -> int:
     if not args.sim:
         print("Watching for a live game on the SC2 client API (localhost:6119)...")
     try:
-        run_coach(build, announcer, clock)
+        run_coach(build, announcer, clock, extra_lead=args.extra_lead)
     except KeyboardInterrupt:
         print("\nStopped.")
     return 0
@@ -127,6 +127,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sim", action="store_true", help="Simulate the game clock (no SC2 needed)")
     p.add_argument("--speed", type=float, default=1.0, help="Sim clock speed multiplier")
     p.add_argument("--no-tts", action="store_true", help="Console cues only")
+    p.add_argument("--extra-lead", type=float, default=0.0,
+                   help="Shift every cue this many extra seconds earlier")
     p.set_defaults(func=cmd_practice)
 
     p = sub.add_parser("review", help="Compare a replay against a planned build")

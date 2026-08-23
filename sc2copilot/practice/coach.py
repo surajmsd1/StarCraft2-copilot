@@ -15,6 +15,7 @@ Design notes:
 from __future__ import annotations
 
 import time as _time
+from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 from ..models import Build, BuildStep, format_time
@@ -22,35 +23,57 @@ from .announce import speak_time
 from .game_client import SC2ClientAPI
 
 
+@dataclass
+class CueEvent:
+    """One thing to say: either the main cue for a step or an early warning."""
+
+    at: float  # game second this fires
+    step: BuildStep
+    warning: bool = False
+
+
 class CueScheduler:
     """Pure scheduling logic: given a monotonically advancing game clock,
-    decide which cues fire now. Kept free of I/O so it is unit-testable."""
+    decide which cues fire now. Kept free of I/O so it is unit-testable.
 
-    def __init__(self, build: Build):
+    Each step fires its main cue `lead` seconds early; steps with
+    warn > lead additionally fire a heads-up `warn` seconds early.
+    extra_lead shifts everything earlier (a user-tunable global knob for
+    "I need more reaction time").
+    """
+
+    def __init__(self, build: Build, extra_lead: float = 0.0):
         self.build = build
-        self._pending: List[BuildStep] = build.sorted_steps()
-        self._fired: List[BuildStep] = []
-        self._last_time: float = -1.0
+        self.extra_lead = extra_lead
+        self.reset()
 
     def reset(self) -> None:
-        self._pending = self.build.sorted_steps()
-        self._fired = []
+        events: List[CueEvent] = []
+        for step in self.build.sorted_steps():
+            if step.warn > step.lead:
+                events.append(CueEvent(step.time - step.warn - self.extra_lead, step, warning=True))
+            events.append(CueEvent(step.time - step.lead - self.extra_lead, step, warning=False))
+        events.sort(key=lambda e: e.at)
+        self._pending = events
         self._last_time = -1.0
 
     @property
     def done(self) -> bool:
         return not self._pending
 
-    def advance(self, game_time: float) -> List[BuildStep]:
-        """Return the steps whose cue window starts at or before game_time."""
+    def advance(self, game_time: float) -> List[CueEvent]:
+        """Return the events due at or before game_time."""
         if game_time < self._last_time - 1.0:
             self.reset()
         self._last_time = game_time
-        due: List[BuildStep] = []
-        while self._pending and game_time >= self._pending[0].time - self._pending[0].lead:
-            step = self._pending.pop(0)
-            self._fired.append(step)
-            due.append(step)
+        due: List[CueEvent] = []
+        while self._pending and game_time >= self._pending[0].at:
+            event = self._pending.pop(0)
+            # A warning whose main cue is also already due is stale noise
+            # (happens when the clock jumps forward); skip it.
+            if event.warning and game_time >= event.step.time - event.step.lead - self.extra_lead:
+                continue
+            due.append(event)
         return due
 
 
@@ -63,6 +86,7 @@ def run_coach(
     max_wait: Optional[float] = None,
     should_stop: Callable[[], bool] = lambda: False,
     status: Callable[[str], None] = print,
+    extra_lead: float = 0.0,
 ) -> None:
     """Drive a CueScheduler off `clock` until the build is exhausted.
 
@@ -71,7 +95,7 @@ def run_coach(
     status() receives non-cue progress lines (waiting, gave up) so a GUI can
     surface them; cues themselves go through the announcer.
     """
-    scheduler = CueScheduler(build)
+    scheduler = CueScheduler(build, extra_lead=extra_lead)
     # Status lines are informational; only actual cues deserve the voice.
     announcer.announce(0, f"Practicing: {build.name} ({len(build.steps)} cues)", spoken="-")
     waited = 0.0
@@ -91,10 +115,15 @@ def run_coach(
             sleep(poll_interval)
             continue
         waiting_said = False
-        for step in scheduler.advance(now):
-            early = step.time - now > 1.5
-            text = f"{step.spoken_cue} at {format_time(step.time)}" if early else step.spoken_cue
-            spoken = f"{step.spoken_cue}, {speak_time(step.time)}" if early else step.spoken_cue
+        for event in scheduler.advance(now):
+            step = event.step
+            if event.warning:
+                text = f"{step.spoken_cue} coming up (at {format_time(step.time)})"
+                spoken = f"{step.spoken_cue} coming up"
+            else:
+                early = step.time - now > 1.5
+                text = f"{step.spoken_cue} at {format_time(step.time)}" if early else step.spoken_cue
+                spoken = f"{step.spoken_cue}, {speak_time(step.time)}" if early else step.spoken_cue
             announcer.announce(now, text, spoken=spoken)
         sleep(poll_interval)
     announcer.announce(clock() or 0, "Build complete. Good luck out there.")
