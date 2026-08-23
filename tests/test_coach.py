@@ -75,6 +75,19 @@ def test_run_coach_with_fake_clock():
     assert "complete" in texts[-1].lower()
 
 
+def test_run_coach_stops_when_asked():
+    announcer = RecordingAnnouncer()
+    calls = [0]
+
+    def should_stop():
+        calls[0] += 1
+        return calls[0] > 3
+
+    run_coach(make_build(), announcer, clock=lambda: 0.0, sleep=lambda _: None, should_stop=should_stop)
+    # stopped before any cue time was reached; only the intro message
+    assert len(announcer.messages) == 1
+
+
 def test_run_coach_gives_up_without_game():
     announcer = RecordingAnnouncer()
     run_coach(make_build(), announcer, clock=lambda: None, sleep=lambda _: None, max_wait=1.0)

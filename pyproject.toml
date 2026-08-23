@@ -21,6 +21,9 @@ dev = ["pytest>=7.0"]
 [project.scripts]
 sc2copilot = "sc2copilot.cli:main"
 
+[project.gui-scripts]
+sc2copilot-gui = "sc2copilot.gui.app:main"
+
 [tool.setuptools.packages.find]
 include = ["sc2copilot*"]
 

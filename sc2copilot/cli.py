@@ -97,6 +97,13 @@ def cmd_timings(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    from .gui.app import main as gui_main
+
+    gui_main()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sc2copilot", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -127,6 +134,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-b", "--build", required=True, help="Planned build JSON")
     p.add_argument("-p", "--player", help="Player name (substring) in the replay")
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser("gui", help="Open the graphical app")
+    p.set_defaults(func=cmd_gui)
 
     p = sub.add_parser("timings", help="Print key timings (first blood, proxies...) from a replay")
     p.add_argument("replay")

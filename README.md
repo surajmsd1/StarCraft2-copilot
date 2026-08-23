@@ -9,15 +9,29 @@ A StarCraft 2 build creator, practice coach, and post-game analyzer — driven b
 3. **Review** — after the game, compare the replay against the plan: which steps were late, which were missed, and key timings the in-game tab never shows you (first blood at 2:35, when your proxy SCVs actually left, when reaper #4 popped).
 4. Repeat until the timings live in your head, not the tool.
 
-## Install
+## Easiest way to try it (Windows)
+
+1. Install Python from [python.org/downloads](https://www.python.org/downloads/) — tick **"Add Python to PATH"** in the installer.
+2. Download this repo (green **Code** button → **Download ZIP**) and unzip it anywhere.
+3. Double-click **`SC2Copilot.bat`**. First run installs everything (~1 min), then the app opens.
+
+In the app:
+
+- **Import newest replay** → pick your name → your last game's opener becomes a build.
+- Select a build → **Start Coaching** → start a game; cues are spoken and shown, synced to the in-game clock.
+- **Auto-review after each game** is on by default: finish a game and the report (drift per step, first blood, missed steps) appears by itself.
+
+Your builds live in `~/SC2Copilot/builds` as editable JSON (add custom cues, tweak times). If something breaks, `~/SC2Copilot/gui-error.log` has the details.
+
+## Install (command line)
 
 ```
 pip install -e .[tts,dev]
 ```
 
-Requires Python 3.9+. `tts` adds spoken cues (pyttsx3, offline); without it cues are console-only.
+Requires Python 3.9+. `tts` adds spoken cues (pyttsx3, offline); without it cues are console-only. `sc2copilot gui` opens the same graphical app.
 
-## Quick start
+## Quick start (command line)
 
 ```bash
 # See who's in a replay

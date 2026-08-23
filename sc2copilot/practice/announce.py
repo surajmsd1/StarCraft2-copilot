@@ -14,7 +14,10 @@ from ..models import format_time
 
 
 class Announcer:
-    def __init__(self, use_tts: bool = True):
+    def __init__(self, use_tts: bool = True, sink=None):
+        """sink: callable(str) that receives each cue line; default prints.
+        A GUI passes its own sink to show cues in-window."""
+        self._sink = sink or (lambda line: print(line, flush=True))
         self._tts_queue: "queue.Queue[str]" = queue.Queue()
         self._engine = None
         if use_tts:
@@ -44,6 +47,6 @@ class Announcer:
                 pass
 
     def announce(self, game_time: float, text: str) -> None:
-        print(f"[{format_time(game_time)}] {text}", flush=True)
+        self._sink(f"[{format_time(game_time)}] {text}")
         if self._engine is not None:
             self._tts_queue.put(text)
