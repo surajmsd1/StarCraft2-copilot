@@ -1,0 +1,27 @@
+{
+  "name": "Proxy 2-Rax 4 Reaper into Macro (example)",
+  "race": "Terran",
+  "matchup": "TvX",
+  "game_version": "",
+  "source_replay": "",
+  "notes": "Illustrative timings only - import your own replay ('sc2copilot import') to replace these with real ones from your game version.",
+  "steps": [
+    { "time": 17, "supply": 14, "action": "Supply Depot", "cue": "Depot now", "kind": "build" },
+    { "time": 25, "supply": 15, "action": "Refinery", "cue": "Gas now", "kind": "build" },
+    { "time": 38, "action": "Send proxy SCVs", "cue": "Send two SCVs across the map, now", "kind": "move", "lead": 3 },
+    { "time": 48, "supply": 16, "action": "Barracks", "count": 1, "cue": "First proxy barracks", "kind": "build" },
+    { "time": 65, "supply": 17, "action": "Barracks", "count": 1, "cue": "Second proxy barracks", "kind": "build" },
+    { "time": 95, "supply": 18, "action": "Reaper", "cue": "First reapers building", "kind": "build" },
+    { "time": 110, "supply": 19, "action": "Supply Depot", "cue": "Second depot at home", "kind": "build" },
+    { "time": 118, "action": "Reaper", "kind": "build" },
+    { "time": 140, "action": "Reaper", "kind": "build" },
+    { "time": 155, "action": "Move out", "cue": "First two reapers move in", "kind": "note", "lead": 8 },
+    { "time": 163, "action": "Reaper", "kind": "build" },
+    { "time": 180, "supply": 22, "action": "Command Center", "cue": "Expand behind it", "kind": "build" },
+    { "time": 240, "action": "Transition", "cue": "Float or salvage the rax, back to standard macro", "kind": "note", "lead": 10 }
+  ],
+  "benchmarks": [
+    { "name": "First blood target", "time": 155, "description": "Reapers should pick up a kill on arrival" },
+    { "name": "Four reapers", "time": 175, "description": "All four reapers on the map" }
+  ]
+}
