@@ -33,6 +33,25 @@ from ..replay.locate import find_replay_dirs, newest_replay
 APP_DIR = Path.home() / "SC2Copilot"
 BUILDS_DIR = APP_DIR / "builds"
 ERROR_LOG = APP_DIR / "gui-error.log"
+SETTINGS_FILE = APP_DIR / "settings.json"
+
+
+def load_settings() -> dict:
+    try:
+        import json
+
+        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_settings(settings: dict) -> None:
+    try:
+        import json
+
+        SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 EXAMPLE_BUILD = Path(__file__).resolve().parent.parent / "data" / "builds" / "example-proxy-4-reaper.json"
 
 
@@ -59,11 +78,15 @@ class App(tk.Tk):
 
         self._build_widgets()
         self._refresh_builds()
-        self._log("Welcome. Import a replay to create a build, or select one and Start Coaching.")
+        self._log("How this works:")
+        self._log(" 1. Import a replay (yours or a pro's) - its opener becomes a build, listed on the left.")
+        self._log("    When it asks whose build, pick YOUR name to practice your own play.")
+        self._log(" 2. Select a build, press Start Coaching, then go play a match in StarCraft II.")
+        self._log("    During the game each step is called out just before its time.")
+        self._log(" 3. When the game ends, the review appears here by itself: what was late, missed,")
+        self._log("    and key timings like first blood.")
         if not self.replay_dirs:
             self._log("Replay folder not auto-detected - use 'Import replay file...' to browse.")
-        else:
-            self._log(f"Replay folder: {self.replay_dirs[0]}")
 
         threading.Thread(target=self._status_loop, daemon=True).start()
         threading.Thread(target=self._auto_review_loop, daemon=True).start()
@@ -91,8 +114,22 @@ class App(tk.Tk):
 
         right = ttk.Frame(main)
         right.pack(side="left", fill="both", expand=True)
-        self.log = tk.Text(right, wrap="word", state="disabled", font=("Consolas", 10))
-        scroll = ttk.Scrollbar(right, command=self.log.yview)
+
+        ttk.Label(right, text="Selected build").pack(anchor="w")
+        detail_frame = ttk.Frame(right)
+        detail_frame.pack(fill="both", expand=True)
+        self.detail = tk.Text(detail_frame, wrap="none", state="disabled",
+                              font=("Consolas", 10), height=14)
+        detail_scroll = ttk.Scrollbar(detail_frame, command=self.detail.yview)
+        self.detail.configure(yscrollcommand=detail_scroll.set)
+        self.detail.pack(side="left", fill="both", expand=True)
+        detail_scroll.pack(side="left", fill="y")
+
+        ttk.Label(right, text="Activity (cues while coaching, reports after games)").pack(anchor="w", pady=(6, 0))
+        log_frame = ttk.Frame(right)
+        log_frame.pack(fill="both", expand=True)
+        self.log = tk.Text(log_frame, wrap="word", state="disabled", font=("Consolas", 10), height=12)
+        scroll = ttk.Scrollbar(log_frame, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="left", fill="y")
@@ -129,7 +166,7 @@ class App(tk.Tk):
                 elif kind == "coach_done":
                     self.coach_btn.config(text="Start Coaching")
                 elif kind == "refresh":
-                    self._refresh_builds()
+                    self._refresh_builds(select=payload[0] if payload else None)
                 elif kind == "pick_player":
                     self._pick_player_dialog(*payload)
                 elif kind == "auto_review":
@@ -149,7 +186,7 @@ class App(tk.Tk):
 
     # ---------- build library ----------
 
-    def _refresh_builds(self) -> None:
+    def _refresh_builds(self, select=None) -> None:
         self.build_list.delete(0, "end")
         self._build_paths = sorted(BUILDS_DIR.glob("*.json"))
         for path in self._build_paths:
@@ -158,8 +195,12 @@ class App(tk.Tk):
             except Exception:
                 name = path.stem + " (unreadable)"
             self.build_list.insert("end", name)
-        if self._build_paths and not self.build_list.curselection():
+        if select is not None and select in self._build_paths:
+            self.build_list.selection_clear(0, "end")
+            self.build_list.selection_set(self._build_paths.index(select))
+        elif self._build_paths and not self.build_list.curselection():
             self.build_list.selection_set(0)
+        self._show_selected_build()
 
     def _selected_build_path(self):
         selection = self.build_list.curselection()
@@ -174,16 +215,24 @@ class App(tk.Tk):
         try:
             build = Build.load(path)
         except Exception as exc:
-            self._log(f"Could not read {path.name}: {exc}")
+            self._set_detail(f"Could not read {path.name}: {exc}")
             return
-        lines = [f"--- {build.name} ---"]
+        lines = [build.name, ""]
+        lines.append(" when  supply  what")
         for step in build.sorted_steps():
-            supply = f"{step.supply}" if step.supply is not None else " "
-            lines.append(f"  {format_time(step.time):>5}  {supply:>3}  {step.action}")
+            supply = f"{step.supply}" if step.supply is not None else "-"
+            lines.append(f"{format_time(step.time):>5}  {supply:>5}   {step.action}")
         if build.benchmarks:
-            lines.append("  Benchmarks:")
-            lines.extend(f"  {format_time(b.time):>5}       {b.name}" for b in build.benchmarks)
-        self._log("\n".join(lines))
+            lines.append("")
+            lines.append("Timings hit in the source replay:")
+            lines.extend(f"{format_time(b.time):>5}          {b.name}" for b in build.benchmarks)
+        self._set_detail("\n".join(lines))
+
+    def _set_detail(self, text: str) -> None:
+        self.detail.configure(state="normal")
+        self.detail.delete("1.0", "end")
+        self.detail.insert("1.0", text)
+        self.detail.configure(state="disabled")
 
     def _open_builds_folder(self) -> None:
         if sys.platform == "win32":
@@ -229,11 +278,20 @@ class App(tk.Tk):
         dialog.title("Whose build?")
         dialog.transient(self)
         dialog.grab_set()
-        ttk.Label(dialog, text=f"{replay.name}\nExtract the build of:", padding=8).pack()
+        ttk.Label(
+            dialog,
+            text=f"{replay.name}\n\nPick YOUR name to practice your own build.\n"
+                 "(Picking the opponent copies their build instead - also useful!)",
+            padding=8,
+        ).pack()
         listbox = tk.Listbox(dialog, width=40, height=max(2, len(players)))
         for p in players:
             listbox.insert("end", f"{p['name']} ({p['race']})")
-        listbox.selection_set(0)
+        remembered = load_settings().get("player_name", "")
+        preselect = next(
+            (i for i, p in enumerate(players) if p["name"] == remembered), 0
+        )
+        listbox.selection_set(preselect)
         listbox.pack(padx=8)
 
         def confirm():
@@ -242,6 +300,9 @@ class App(tk.Tk):
                 return
             player = players[selection[0]]
             dialog.destroy()
+            settings = load_settings()
+            settings["player_name"] = player["name"]
+            save_settings(settings)
             self._finish_import(replay, player["name"])
 
         ttk.Button(dialog, text="Import build", command=confirm).pack(pady=8)
@@ -257,8 +318,8 @@ class App(tk.Tk):
                 build.save(out)
                 self._post("log", f"Imported '{build.name}': {len(build.steps)} steps, "
                                   f"{len(build.benchmarks)} benchmarks (first 5 minutes).")
-                self._post("log", "Tip: open the builds folder to hand-tune cues in the JSON.")
-                self._post("refresh")
+                self._post("log", "It is selected on the left - press Start Coaching to practice it.")
+                self._post("refresh", out)
             except Exception as exc:
                 self._post("log", f"Import failed: {exc}")
 
@@ -287,12 +348,20 @@ class App(tk.Tk):
             return
         self.coach_stop.clear()
         self.coach_btn.config(text="Stop Coaching")
-        self._log(f"Coaching armed for '{build.name}'. Start a game - cues follow the in-game clock.")
+        self._log(f"Coaching armed: '{build.name}'.")
+        if SC2ClientAPI(timeout=0.8).poll() is None:
+            self._log("StarCraft II is not running yet - open it and start a match.")
+        self._log("Nothing happens until a match begins; then each step is called out"
+                  " a few seconds early, following the in-game clock.")
         self.announcer = Announcer(use_tts=self.speak.get(), sink=lambda line: self._post("log", line))
 
         def worker():
             try:
-                run_coach(build, self.announcer, live_clock(), should_stop=self.coach_stop.is_set)
+                run_coach(
+                    build, self.announcer, live_clock(),
+                    should_stop=self.coach_stop.is_set,
+                    status=lambda line: self._post("log", line),
+                )
             except Exception as exc:
                 self._post("log", f"Coach error: {exc}")
             finally:
@@ -322,7 +391,14 @@ class App(tk.Tk):
                 from ..analyze.compare import compare, render_report
                 from ..replay.extract import extract_build
                 planned = Build.load(path)
-                actual = extract_build(str(replay), include_workers=True)
+                me = load_settings().get("player_name") or None
+                try:
+                    actual = extract_build(str(replay), player=me, include_workers=True)
+                except Exception:
+                    if me is None:
+                        raise
+                    # Different account/name in this replay - fall back to player 1.
+                    actual = extract_build(str(replay), include_workers=True)
                 self._post("log", render_report(compare(planned, actual)))
             except Exception as exc:
                 self._post("log", f"Review failed: {exc}")

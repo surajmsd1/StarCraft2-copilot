@@ -61,11 +61,14 @@ def run_coach(
     sleep: Callable[[float], None] = _time.sleep,
     max_wait: Optional[float] = None,
     should_stop: Callable[[], bool] = lambda: False,
+    status: Callable[[str], None] = print,
 ) -> None:
     """Drive a CueScheduler off `clock` until the build is exhausted.
 
     clock() returns current in-game seconds, or None while no game is active.
     should_stop() lets a host (GUI, signal handler) cancel between polls.
+    status() receives non-cue progress lines (waiting, gave up) so a GUI can
+    surface them; cues themselves go through the announcer.
     """
     scheduler = CueScheduler(build)
     announcer.announce(0, f"Practicing: {build.name} ({len(build.steps)} cues)")
@@ -77,11 +80,11 @@ def run_coach(
         now = clock()
         if now is None:
             if not waiting_said:
-                print("Waiting for a game to start...", flush=True)
+                status("Waiting for a game to start...")
                 waiting_said = True
             waited += poll_interval
             if max_wait is not None and waited > max_wait:
-                print("No game detected, giving up.", flush=True)
+                status("No game detected, giving up.")
                 return
             sleep(poll_interval)
             continue
