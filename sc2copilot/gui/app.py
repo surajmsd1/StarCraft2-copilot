@@ -147,6 +147,7 @@ class App(tk.Tk):
         ).pack(side="left", padx=6)
         self.speak = tk.BooleanVar(value=True)
         ttk.Checkbutton(bottom, text="Speak cues", variable=self.speak).pack(side="left", padx=6)
+        ttk.Button(bottom, text="Test voice", command=self._test_voice).pack(side="left", padx=6)
         self.status = ttk.Label(bottom, text="SC2: looking...", anchor="e")
         self.status.pack(side="right")
 
@@ -354,6 +355,10 @@ class App(tk.Tk):
         self._log("Nothing happens until a match begins; then each step is called out"
                   " a few seconds early, following the in-game clock.")
         self.announcer = Announcer(use_tts=self.speak.get(), sink=lambda line: self._post("log", line))
+        if self.speak.get():
+            self._log(f"Voice: {self.announcer.describe_voice()}.")
+            if not self.announcer.tts_available:
+                self._log("Cues will be text-only in this window.")
 
         def worker():
             try:
@@ -369,6 +374,15 @@ class App(tk.Tk):
 
         self.coach_thread = threading.Thread(target=worker, daemon=True)
         self.coach_thread.start()
+
+    def _test_voice(self) -> None:
+        if not hasattr(self, "_voice_tester"):
+            self._voice_tester = Announcer(use_tts=True, sink=lambda line: self._post("log", line))
+        self._log(f"Voice: {self._voice_tester.describe_voice()}. You should hear a test sentence now.")
+        if self._voice_tester.tts_available:
+            self._voice_tester.test_voice()
+        else:
+            self._log("No speech engine found on this system - cues will be text-only.")
 
     # ---------- review ----------
 

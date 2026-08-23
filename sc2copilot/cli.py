@@ -62,8 +62,8 @@ def cmd_practice(args) -> int:
 
     build = Build.load(args.build)
     announcer = Announcer(use_tts=not args.no_tts)
-    if not announcer.tts_available and not args.no_tts:
-        print("(TTS unavailable - install with: pip install sc2copilot[tts])")
+    if not args.no_tts:
+        print(f"Voice: {announcer.describe_voice()}")
     clock = sim_clock(speed=args.speed) if args.sim else live_clock()
     if not args.sim:
         print("Watching for a live game on the SC2 client API (localhost:6119)...")
